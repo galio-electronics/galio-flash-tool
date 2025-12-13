@@ -661,7 +661,7 @@
             this.Margin = new System.Windows.Forms.Padding(3, 4, 3, 4);
             this.Name = "Form1";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "Galio Flash Tool v1.0.2";
+            this.Text = "Galio Flash Tool v1.0.3";
             this.Load += new System.EventHandler(this.Form1_Load);
             this.groupBox_port.ResumeLayout(false);
             this.groupBox_port.PerformLayout();
