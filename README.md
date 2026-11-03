@@ -1,113 +1,103 @@
-# ⚡ Galio Flash Tool – Firmware Loader para dispositivos Protolink
+# Galio Flash Tool — Station/Monitor
 
-<img width="337" height="367" alt="GalioFlashTool-Program" src="https://github.com/user-attachments/assets/4356c24c-9b1e-44b2-b755-87fd9915d3c2" />
+Aplicación de campo para cargar firmware Intel HEX en ProtoLink Station/Monitor
+(PIC18F67K40, bootloader `BOOT:1.2`, circuito de dos NPN cruzados).
+Windows 10/11, .NET Framework 4.7.2. No requiere Python ni compilador de firmware.
 
-Galio Flash Tool es una herramienta ligera y profesional diseñada para cargar firmware en dispositivos **Protolink**, desarrollada por **Galio Electronics**.  
-Incluye un bootloader robusto, comunicación serial optimizada y una terminal integrada para depuración.
+## Uso
 
----
+1. Conectar la placa por USB y seleccionar su COM.
+2. Seleccionar el archivo `.hex` de aplicación destinado a ese equipo.
+3. Pulsar **Cargar**. No es necesario pulsar Connect ni Boot previamente.
 
-## 🚀 Características principales
+La aplicación valida el archivo completo, abre a 115200 8N1, identifica el
+bootloader, carga y espera la identificación de inicio de aplicación. Conserva
+el mismo puerto abierto hasta terminar esta comprobación; después lo libera.
+Para otra carga basta volver a pulsar Cargar; cada carga ejecuta autoboot.
+Connect/Disconnect y Boot quedan disponibles para diagnóstico. La terminal
+avanzada requiere Connect y no puede transmitir durante una carga.
 
-### 🔥 Bootloader integrado
-- Envío del archivo `.hex` o `.bin` con ACK por hardware.
-- Detección de errores de comunicación.
-- Barra de progreso + porcentaje en tiempo real.
-- Entrada automática a modo boot (DTR / RTS toggle).
+El resultado distingue carga aceptada de aplicación iniciada. Un firmware sin
+la línea `INFO app=... fw=...` puede haberse iniciado aunque no se confirme.
+El protocolo no ofrece lectura de flash: ACK no equivale a verificación por lectura.
+Una desconexión, cancelación o respuesta inválida requiere repetir la carga desde
+el inicio; no hay reintentos automáticos de registros individuales. Cerrar la
+ventana cancela cooperativamente y libera el puerto.
 
-<img width="337" height="367" alt="GalioFlashTool-Boot" src="https://github.com/user-attachments/assets/449e45cd-ecb5-4716-b614-6a6610687b34" />
+## Perfil y protecciones
 
----
+- Solo Intel HEX; BIN no está soportado.
+- Checksum, longitud, tipos 00/01/04, EOF, solapamientos y vector en 0x0600.
+- Aplicación: 0x0600..0x1FFFF. Se rechazan registros del bootloader y otras regiones.
+- Fuses 0x300000..0x30000D se excluyen; se conservan los instalados por ICSP.
+- Normalización ascendente: hasta 26 bytes de datos, sin cruzar filas de 128 bytes,
+  huecos rellenados con FF hasta el último bloque de 16 bytes usado. Cada línea
+  ocupa como máximo 64 bytes contando CR.
+- Cada registro exige XOFF/ACK/XON (`13 06 11`); EOF exige además `06 11`.
+- Se acepta únicamente el banner Station/Monitor BOOT:1.2. No usar este perfil
+  para placas V1/V2/Excore u otros bootloaders.
 
-### 🖥️ Terminal serial profesional
-- Recepción en **ASCII** o **RAW/HEX**.
-- Formato con **timestamp** opcional.
-- Autoscroll automático.
-- Envío en **ASCII / HEX**, con opción `NL/CR`.
-- Vista limpia y minimalista.
+El HEX por sí mismo no certifica el modelo funcional, cliente o versión de la
+aplicación. El operador debe seleccionar el firmware de producción correcto.
+El SHA-256 identifica el archivo cargado; no constituye una firma de autenticidad.
 
-<img width="337" height="367" alt="GalioFlashTool-Terminal" src="https://github.com/user-attachments/assets/f99d13ac-8f20-4720-879a-0ce1ffc63b37" />
+## Autoboot
 
+Antes de abrir: DTR=False, RTS=False, sin handshake automático.
+Reposo 50 ms; RTS=True (RESET) 200 ms; DTR=True y RTS=False consecutivos
+(BOOT), mantener 200 ms; DTR=False. Capturar RX durante las esperas, sin purgar
+tras liberar RESET. Esperar al menos 1050 ms desde el banner completo antes del
+primer registro. Identificación: hasta 3 s; respuesta por registro: 3 s;
+confirmación final: 2 s; identificación de aplicación: 5 s.
 
----
+Los tiempos proceden de `protolink/docs/autoboot.md` y del cargador Python
+`tools/station_upload.py`. La versión C# se validó en COM26 con station-dht22; ver la validación física abajo.
 
-## 🧩 Requisitos
+## Registros
 
-- **Windows 10/11**
-- **.NET Framework 4.7.2**  
-  (preinstalado en la mayoría de PCs modernas)
+Cada operación crea un archivo en `%LOCALAPPDATA%\Galio\FlashTool\logs`.
+Incluye fecha con zona horaria, COM, perfil, ruta del HEX, SHA-256, bytes,
+fuses excluidos, banner, resultado y errores. La ruta se muestra al terminar.
+El archivo se valida y se guarda en memoria antes de abrir el puerto, de modo que
+un cambio posterior en disco no altera los datos enviados ni su huella registrada.
 
----
+## Desarrollo y pruebas
 
-## 📥 Descarga
+Abrir `Galio Flash Tool.sln` en Visual Studio con soporte .NET Framework 4.7.2.
+Compilar Release mediante MSBuild. Ejecutar `powershell -File tests/run.ps1` para
+pruebas sin hardware del parser, límites de memoria, empaquetado, autoboot,
+respuestas serie, tiempos y cancelación. El transporte simulado entrega bytes
+individuales y confirma inmediatamente las escrituras para detectar regresiones.
 
-Ve a la sección de **Releases** para descargar la última versión:
+Antes de distribuir, probar en una placa de banco: carga correcta, segunda carga,
+HEX inválido, puerto ocupado, desconexión durante transferencia y cierre de la
+ventana. Comprobar la aplicación esperada tras reinicio. Se realizaron dos cargas físicas correctas; las pruebas de desconexión y cierre
+durante transferencia quedan pendientes en hardware.
 
-👉 https://github.com/artgasca/galio-flash-tool/releases
+Validación automatizada actual: 23 comprobaciones del núcleo y una prueba de
+construcción/render de WinForms (`tests/ui-smoke.ps1`, ejecutar desde la raíz en
+Windows PowerShell STA después de compilar Release). El render se guarda en
+`tests/bin/form.png`. Esta prueba no abre ningún puerto serie.
 
-Descarga el archivo:
-GalioFlashTool_vX.Y.Z.zip
+## Validación física — 2 de noviembre de 2026
 
+Dos cargas consecutivas desde la interfaz en COM26 a 115200, seleccionando
+`G:\Proyectos\PIC\protolink\build\station-dht22\main.hex`:
 
-Descomprime y ejecuta:
+- SHA-256: `BE9CD47070FDBC3C84221E18CA924831A968E2DCB2371EB4E8A944BA159677BD`.
+- 8034 bytes de aplicación, 12 bytes de fuses excluidos, 317 registros enviados.
+- Bootloader `Protolink-Station-Monitor BOOT:1.2` identificado.
+- Confirmaciones de transferencia y EOF completas.
+- Reinicio observado: `INFO app=station-dht22 fw=0.1.0`, reset `0x0333`.
+- Aproximadamente 5.0 s hasta carga aceptada y 6.0 s hasta identificación de arranque.
 
-Galio Flash Tool.exe
+Los primeros dos intentos con propiedades `SerialPort.DtrEnable/RtsEnable` no
+entraron al loader y no transmitieron HEX. La carga usa ahora `NativeLoaderPort`,
+que configura una vez el puerto y modifica las líneas con `EscapeCommFunction`,
+como pySerial. Mantiene su propio SafeFileHandle durante autoboot, carga y arranque;
+no utiliza reflexión ni un proceso Python. La terminal conserva SerialPort y se
+cierra antes de adquirir el puerto exclusivo de carga.
 
-
-No requiere instalación.
-
----
-
-## 🔧 Cómo usar
-
-### 1️⃣ Conectar dispositivo
-1. Conecta el equipo Protolink mediante USB o convertidor TTL/USB.
-2. Elige:
-   - **COM Port**
-   - **Baud Rate**
-3. Presiona **Connect**.
-
----
-
-### 2️⃣ Cargar firmware
-1. En el tab **Bootloader**, selecciona el archivo `.hex`.
-2. Presiona **Upload**.
-3. El software:
-   - Entra automáticamente a modo bootloader.
-   - Envía el firmware línea por línea.
-   - Espera `ACK (0x06)` por cada línea.
-   - Muestra progreso y porcentaje.
-
-Al finalizar verás:
-
-
-<img width="337" height="367" alt="image" src="https://github.com/user-attachments/assets/fccb7b26-367e-454a-bad1-09737640cf5d" />
-
-
-
----
-
-### 3️⃣ Usar la terminal serial
-1. Cambia al tab **Terminal**.
-2. Elige:
-   - Modo de recepción: **Text** o **Raw**
-   - Modo de envío: **ASCII** o **HEX**
-3. Escribe comandos y presiona **Send**.
-
-Ideal para depurar sensores, Protolink o tus PIC.
-
----
-
-## 🛡️ Seguridad y robustez
-
-- Comunicación serial no bloqueante (ReadExisting).
-- Buffer inteligente para evitar tramas truncadas.
-- Manejo seguro de hilos (Invoke/BeginInvoke).
-- Cancelación limpia al cerrar el COM.
-- Protección contra cuelgues del bootloader.
-
----
-
-
-
-
+Referencia de la diferencia: [SerialStream de .NET Framework](https://github.com/microsoft/referencesource/blob/main/System/sys/system/IO/ports/SerialStream.cs)
+y [EscapeCommFunction](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-escapecommfunction).
+No se midieron señales con osciloscopio ni se verificó la lectura del sensor DHT22.
