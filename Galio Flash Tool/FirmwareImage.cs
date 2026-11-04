@@ -10,22 +10,54 @@ namespace Galio_Flash_Tool
     internal sealed class FirmwareImage
     {
         public readonly List<string> Records = new List<string>();
+        public string Created { get; private set; }
+
+        private static string CreatedFromComment(string line)
+        {
+            if (!line.StartsWith(";")) return null;
+            var match = System.Text.RegularExpressions.Regex.Match(line,
+                @"(?:^;|\s)CREATED\s*=\s*(?:""([^""]+)""|(.+))$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!match.Success) return null;
+            return (match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value).Trim();
+        }
+
+        public string Microcontroller { get; private set; }
+
+        private void ReadComment(string line)
+        {
+            if (Created == null) Created = CreatedFromComment(line);
+            if (Microcontroller == null && System.Text.RegularExpressions.Regex.IsMatch(line,
+                @"^;\s*PIC[0-9][A-Za-z0-9-]*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                Microcontroller = line.Substring(1).Trim();
+        }
+
+        public static FirmwareImage ReadMetadata(string path)
+        {
+            var image = new FirmwareImage();
+            foreach (string raw in File.ReadLines(path))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith(";")) image.ReadComment(line);
+            }
+            return image;
+        }
+
         public string Sha256 { get; private set; }
         public int PayloadBytes { get; private set; }
         public int SkippedFuseBytes { get; private set; }
 
-        public static FirmwareImage Load(string path)
+        public static FirmwareImage Load(string path, int first = 0x600, int last = 0x1FFFF)
         {
             if (!string.Equals(Path.GetExtension(path), ".hex", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Seleccione un archivo Intel HEX (.hex).");
             byte[] bytes = File.ReadAllBytes(path);
-            var result = Parse(Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'));
+            var result = Parse(Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'), first, last);
             using (var sha = SHA256.Create())
                 result.Sha256 = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "");
             return result;
         }
 
-        public static FirmwareImage Parse(string text)
+        public static FirmwareImage Parse(string text, int first = 0x600, int last = 0x1FFFF)
         {
             var image = new FirmwareImage();
             var memory = new SortedDictionary<int, byte>();
@@ -39,7 +71,12 @@ namespace Galio_Flash_Tool
                 {
                     number++;
                     line = line.Trim();
-                    if (line.Length == 0 || line.StartsWith(";")) continue;
+                    if (line.Length == 0) continue;
+                    if (line.StartsWith(";"))
+                    {
+                        image.ReadComment(line);
+                        continue;
+                    }
                     string error = "HEX línea " + number + ": ";
                     if (eof || !line.StartsWith(":" ) || line.Length < 11 || line.Length % 2 != 1)
                         throw new InvalidDataException(error + "formato o contenido después de EOF inválido.");
@@ -59,8 +96,8 @@ namespace Galio_Flash_Tool
                         long start = upper + address;
                         if (start >= 0x300000 && start + count <= 0x30000E)
                         { image.SkippedFuseBytes += count; continue; }
-                        if (start < 0x600 || start + count > 0x20000)
-                            throw new InvalidDataException(error + "dirección fuera de aplicación Station: 0x" + start.ToString("X"));
+                        if (start < first || start + count - 1 > last)
+                            throw new InvalidDataException(error + "dirección fuera del rango de aplicación: 0x" + start.ToString("X"));
                         for (int i = 0; i < count; i++)
                         {
                             int location = (int)start + i;
@@ -71,11 +108,11 @@ namespace Galio_Flash_Tool
                     else throw new InvalidDataException(error + "tipo de registro no admitido.");
                 }
             }
-            if (!eof || Enumerable.Range(0x600, 4).Any(a => !memory.ContainsKey(a)))
-                throw new InvalidDataException("Falta EOF o vector de aplicación en 0x0600.");
+            if (!eof || Enumerable.Range(first, 4).Any(a => !memory.ContainsKey(a)))
+                throw new InvalidDataException("Falta EOF o vector de aplicación en 0x" + first.ToString("X") + ".");
             image.PayloadBytes = memory.Count;
             int end = (memory.Keys.Max() + 16) & ~15, bank = -1;
-            for (int start = 0x600; start < end;)
+            for (int start = first; start < end;)
             {
                 if (start >> 16 != bank)
                 {

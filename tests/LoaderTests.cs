@@ -16,6 +16,8 @@ class LoaderTests
     static void Main()
     {
         var image = FirmwareImage.Parse("; comment\n\n" + App + Eof);
+        Check(image.Created == null && FirmwareImage.Parse(App + Eof + ";CRC=2BC9  CREATED=\"02-nov.-26 21:56\"").Created == "02-nov.-26 21:56", "CCS build timestamp after EOF");
+        Check(image.Microcontroller == null && FirmwareImage.Parse(App + Eof + ";PIC18F4550\n;CRC=1234").Microcontroller == "PIC18F4550", "CCS target device after EOF");
         Check(image.PayloadBytes == 4, "blank lines and comments");
         Check(image.Records.All(r => r.Length <= 64), "loader buffer limit");
         Reject(App, "missing EOF");
@@ -40,11 +42,20 @@ class LoaderTests
             for (int i = 0; i < count; i++) rebuilt.Add(bank + addr + i, Convert.ToByte(record.Substring(9 + i * 2, 2), 16));
         }
         Check(rebuilt[0x600] == 1 && rebuilt[0x604] == 255 && rebuilt[0xFFFE] == 5 && rebuilt[0x10000] == 7, "payload reconstruction, gap fill, rows and banks");
+        const string other = "name=Other,version=BOOT:1.2,date=2-Nov-26,time=21:14:39";
+        Check(StationLoader.BootIdentification(other) == other && StationLoader.IsBanner(other), "accept identified customer hardware");
+        Check(StationLoader.BootIdentification(other.Replace("name=Other", "name=")) == null, "reject missing hardware name");
+        const string legacy = "name=EXCORE-V1,version=BOOT:1.1,date=2-Nov-26,time=21:14:39";
+        Check(StationLoader.BootIdentification("debug" + legacy) == legacy, "legacy version following partial debug output");
+        Check(StationLoader.IsBanner(legacy.Replace("EXCORE-V1", "Protolink-Station-Monitor")), "boot version is not hardcoded");
         var port = new FakePort();
         var loader = new StationLoader(port, CancellationToken.None);
         Check(loader.Upload(image, n => { }, s => { }), "complete upload and application startup");
         Check(port.Controls.SequenceEqual(new[] { "DFalse", "RFalse", "RTrue", "DTrue", "RFalse", "DFalse" }), "crossed autoboot sequence");
         Check(port.Writes == image.Records.Count, "all normalized records transmitted");
+        var manual = new FakePort();
+        Check(new StationLoader(manual, CancellationToken.None).Upload(image, n => { }, s => { }, loader.Banner)
+            && manual.Controls.Count == 0 && manual.Writes == image.Records.Count, "manual session uploads without toggling DTR/RTS");
         var bad = new FakePort(); bad.Rx.Enqueue(0x15);
         try { new StationLoader(bad, CancellationToken.None).Expect(new byte[] { 0x13, 6, 0x11 }, 20); throw new Exception("accepted NAK"); }
         catch (IOException) { Check(true, "reject unexpected response"); }
@@ -57,8 +68,11 @@ class LoaderTests
         try { new StationLoader(missingFinal, CancellationToken.None).Upload(image, n => { }, s => { }); throw new Exception("missing EOF accepted"); }
         catch (TimeoutException) { Check(true, "missing final EOF confirmation fails"); }
         var wrongBoard = new FakePort { WrongBoard = true };
-        try { new StationLoader(wrongBoard, CancellationToken.None).Upload(image, n => { }, s => { }); throw new Exception("wrong board accepted"); }
-        catch (TimeoutException) { Check(wrongBoard.Writes == 0, "wrong board never receives HEX"); }
+        Check(new StationLoader(wrongBoard, CancellationToken.None).Upload(image, n => { }, s => { }), "customer name can upload");
+        var general = BoardMap.Read(Environment.GetCommandLineArgs()[1], other);
+        var station = BoardMap.Read(Environment.GetCommandLineArgs()[1], loader.Banner);
+        Check(general.Section == "General" && general.Start == 0x600 && station.Micro == "18F67K40", "INI default and board/boot match");
+        Check(FirmwareImage.Parse(R(0, 0x800, 1, 2, 3, 4) + Eof, 0x800, 0x7FFF).PayloadBytes == 4, "custom application vector");
         var disconnected = new FakePort { Disconnect = true };
         try { new StationLoader(disconnected, CancellationToken.None).Upload(image, n => { }, s => { }); throw new Exception("disconnect ignored"); }
         catch (IOException) { Check(true, "disconnect propagates as failure"); }

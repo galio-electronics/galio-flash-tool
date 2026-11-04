@@ -55,7 +55,7 @@
     <Compile Include="Form1.Designer.cs">
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
-    <Compile Include="Program.cs" /><Compile Include="FirmwareImage.cs" /><Compile Include="StationLoader.cs" /><Compile Include="NativeLoaderPort.cs" />
+    <Compile Include="BoardMap.cs" /><Compile Include="Program.cs" /><Compile Include="FirmwareImage.cs" /><Compile Include="StationLoader.cs" /><Compile Include="NativeLoaderPort.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="Form1.resx">
       <DependentUpon>Form1.cs</DependentUpon>
@@ -81,6 +81,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <Content Include="placas.ini"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
   </ItemGroup>
   <ItemGroup>
     <Content Include="favicon.ico" />

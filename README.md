@@ -6,16 +6,9 @@ Windows 10/11, .NET Framework 4.7.2. No requiere Python ni compilador de firmwar
 
 ## Uso
 
-1. Conectar la placa por USB y seleccionar su COM.
-2. Seleccionar el archivo `.hex` de aplicación destinado a ese equipo.
-3. Pulsar **Cargar**. No es necesario pulsar Connect ni Boot previamente.
-
-La aplicación valida el archivo completo, abre a 115200 8N1, identifica el
-bootloader, carga y espera la identificación de inicio de aplicación. Conserva
-el mismo puerto abierto hasta terminar esta comprobación; después lo libera.
-Para otra carga basta volver a pulsar Cargar; cada carga ejecuta autoboot.
-Connect/Disconnect y Boot quedan disponibles para diagnóstico. La terminal
-avanzada requiere Connect y no puede transmitir durante una carga.
+1. Seleccionar el COM en la pestaña **Program** y pulsar **Connect**. La herramienta ejecuta Auto Boot una sola vez y escucha la identificación del equipo. En placas con entrada manual, accionar BOOT y RESET mientras el puerto está abierto.
+2. Seleccionar el HEX del equipo. Con el archivo válido y el bootloader identificado, pulsar **Cargar**. La transferencia utiliza el mismo puerto, que se libera al finalizar. Para el siguiente equipo, volver a conectar.
+3. Para ver mensajes de depuración, pulsar **Connect** desde **Terminal avanzada**. Cambiar de pestaña conserva la conexión existente. Para cambiar su función, desconectar y conectar desde la pestaña deseada.
 
 El resultado distingue carga aceptada de aplicación iniciada. Un firmware sin
 la línea `INFO app=... fw=...` puede haberse iniciado aunque no se confirme.
@@ -34,8 +27,11 @@ ventana cancela cooperativamente y libera el puerto.
   huecos rellenados con FF hasta el último bloque de 16 bytes usado. Cada línea
   ocupa como máximo 64 bytes contando CR.
 - Cada registro exige XOFF/ACK/XON (`13 06 11`); EOF exige además `06 11`.
-- Se acepta únicamente el banner Station/Monitor BOOT:1.2. No usar este perfil
-  para placas V1/V2/Excore u otros bootloaders.
+- Se admite cualquier nombre y versión que anuncie el banner del bootloader. El protocolo de confirmación sigue siendo el mismo.
+
+### Placas de cliente
+
+Edite `placas.ini` junto al ejecutable y vuelva a conectar. La sección `[General]` se usa cuando no hay una entrada para la pareja nombre/versión. Para personalizar una placa, copie el ejemplo del INI y use `[nombre exacto | BOOT:versión]`. Indique el inicio y fin inclusivo de la aplicación en hexadecimal según su mapa de memoria. El nombre del micro es informativo. El archivo incluye el mapa original como valor general y no detecta la capacidad física del PIC.
 
 El HEX por sí mismo no certifica el modelo funcional, cliente o versión de la
 aplicación. El operador debe seleccionar el firmware de producción correcto.

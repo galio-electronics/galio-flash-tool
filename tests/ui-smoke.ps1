@@ -16,9 +16,18 @@ try {
         $bitmap.Save((Join-Path $root 'tests\bin\form.png'))
     } finally { $bitmap.Dispose() }
     $fields = [Reflection.BindingFlags]'Instance,NonPublic'
-    $fileGroup = $form.GetType().GetField('groupBox_fwFile', $fields).GetValue($form)
+    $groups = @('groupBox_fwFile','groupBox_hwInfo','groupBox_uploadProgress') | ForEach-Object {
+        $form.GetType().GetField($_, $fields).GetValue($form)
+    }
     $upload = $form.GetType().GetField('btn_upload', $fields).GetValue($form)
-    if (!$fileGroup.Enabled -or $upload.Enabled) { throw 'Initial firmware selection state is incorrect' }
-    'PASS form construction, rendering and initial controls'
+    if (($groups | Where-Object Enabled) -or $upload.Enabled) { throw 'Programming controls enabled before identification' }
+    $form.GetType().GetField('detectedBanner', $fields).SetValue($form, 'name=Test,version=BOOT:1.2,date=x,time=y')
+    $refresh = $form.GetType().GetMethod('RefreshControls', $fields)
+    $refresh.Invoke($form, @())
+    if ($groups | Where-Object { !$_.Enabled }) { throw 'Programming controls disabled after identification' }
+    $form.GetType().GetMethod('CloseProgram', $fields).Invoke($form, @())
+    $refresh.Invoke($form, @())
+    if ($groups | Where-Object Enabled) { throw 'Programming controls enabled after session ended' }
+    'PASS form rendering and programming controls before, during and after identification'
 } finally { $form.Dispose() }
 
